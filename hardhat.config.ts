@@ -9,6 +9,12 @@ const config: HardhatUserConfig = {
   gasReporter: {
     currency: "USD",
     enabled: true,
+  },
+  networks: {
+    sepolia: {
+      url: `wss://sepolia.infura.io/ws/v3/${process.env.INFURA_PROJECT_ID}`,
+      accounts: [`0x${process.env.SEPOLIA_PRIVATE_KEY}`],
+    }
   }
 };
 
