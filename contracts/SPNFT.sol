@@ -22,27 +22,41 @@ contract SPNFT is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     Counters.Counter private _tokenIdCounter;
 
     /// @dev The approach to revealing the NFTs.
-    enum RevealingApproach { IN_COLLECTION, SEPARATE_COLLECTION }
+    enum RevealingApproach {
+        IN_COLLECTION,
+        SEPARATE_COLLECTION
+    }
     RevealingApproach public revealingApproach;
 
     /// @dev Whether a given token has been revealed.
-    mapping (uint256 => bool) public revealed;
+    mapping(uint256 => bool) public revealed;
+
+    /// @dev The cost to mint a token.
+    uint256 public mintCost;
 
     /**
      * @dev Construct a new SPNFT contract.
      * @param _revealingApproach The approach to revealing the NFTs.
      */
-    constructor(RevealingApproach _revealingApproach) ERC721("Example SP NFT", "ESPNFT") {
+    constructor(
+        RevealingApproach _revealingApproach,
+        uint256 _mintCost
+    ) ERC721("Example SP NFT", "ESPNFT") {
         revealingApproach = _revealingApproach;
+        mintCost = _mintCost;
     }
 
     /**
      * @dev Mint a token to the caller. See {ERC721-_safeMint}.
      */
     function mint() public payable {
+        require(msg.value >= mintCost, "SPNFT: underpayment");
         uint256 tokenId = _tokenIdCounter.current();
         _tokenIdCounter.increment();
         _safeMint(msg.sender, tokenId);
+        if (msg.value > mintCost) {
+            payable(msg.sender).transfer(msg.value - mintCost);
+        }
     }
 
     /**

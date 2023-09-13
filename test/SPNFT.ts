@@ -6,12 +6,14 @@ enum RevealingApproach {
   EXTERNAL = 1,
 };
 
+const MINT_PRICE = ethers.parseEther("0.1");
+
 describe("SPNFT", function () {
   async function deployFixture(revealingApproach: RevealingApproach = RevealingApproach.INTERNAL) {
     const [owner, otherAccount] = await ethers.getSigners();
 
     const SPNFT = await ethers.getContractFactory("SPNFT");
-    const spnft = await SPNFT.deploy(revealingApproach);
+    const spnft = await SPNFT.deploy(revealingApproach, MINT_PRICE);
 
     return { spnft, revealingApproach, owner, otherAccount };
   }
@@ -42,15 +44,28 @@ describe("SPNFT", function () {
   });
 
   describe("Minting", function () {
-    it("Should mint a token", async function () {
+    it("Should allow minting a token", async function () {
       const { spnft, owner } = await deployFixture();
-      await spnft.mint();
+      await spnft.mint({ value: MINT_PRICE });
       expect(await spnft.balanceOf(owner.address)).to.equal(1);
     });
 
-    it("Should have default metadata", async function () {
+    it("Should disallow underpriced minting", async function () {
       const { spnft, owner } = await deployFixture();
-      await spnft.mint();
+      await expect(spnft.mint({ value: ethers.parseEther("0.09") })).to.be.revertedWith("SPNFT: underpayment");
+      expect(await spnft.balanceOf(owner.address)).to.equal(0);
+    });
+
+    it("Should send overpayment back to the minter", async function () {
+      const { spnft, owner } = await deployFixture();
+      await spnft.mint({ value: ethers.parseEther("0.2") });
+      const contractBalance = await ethers.provider.getBalance(await spnft.getAddress());
+      expect(contractBalance).to.equal(MINT_PRICE);
+    });
+
+    it("Should have default metadata", async function () {
+      const { spnft } = await deployFixture();
+      await spnft.mint({ value: MINT_PRICE });
       const tokenURI = await spnft.tokenURI(0);
       expect(tokenURI).to.equal(await spnft.UNREVEALED_METADATA());
     });
