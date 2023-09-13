@@ -39,10 +39,20 @@ describe("SPNFT", function () {
       const { spnft } = await deployFixture();
       expect(await spnft.symbol()).to.equal("ESPNFT");
     });
+  });
 
-    it("Should not be revealed yet", async function () {
-      const { spnft } = await deployFixture();
-      expect(await spnft.revealed()).to.equal(false);
+  describe("Minting", function () {
+    it("Should mint a token", async function () {
+      const { spnft, owner } = await deployFixture();
+      await spnft.mint();
+      expect(await spnft.balanceOf(owner.address)).to.equal(1);
+    });
+
+    it("Should have default metadata", async function () {
+      const { spnft, owner } = await deployFixture();
+      await spnft.mint();
+      const tokenURI = await spnft.tokenURI(0);
+      expect(tokenURI).to.equal(await spnft.UNREVEALED_METADATA());
     });
   });
 });

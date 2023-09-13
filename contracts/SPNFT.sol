@@ -10,6 +10,14 @@ import "@openzeppelin/contracts/utils/Counters.sol";
 contract SPNFT is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     using Counters for Counters.Counter;
 
+    /// @dev Placeholder metadata for unrevealed NFTs.
+    string public constant UNREVEALED_METADATA =
+        string(
+            abi.encodePacked(
+                '{"name": "Unrevealed SP NFT", "description": "Story Protocol NFT.", "attributes": []}'
+            )
+        );
+
     /// @dev The counter for token IDs.
     Counters.Counter private _tokenIdCounter;
 
@@ -17,8 +25,8 @@ contract SPNFT is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     enum RevealingApproach { IN_COLLECTION, SEPARATE_COLLECTION }
     RevealingApproach public revealingApproach;
 
-    /// @dev Whether the NFTs have been revealed.
-    bool public revealed = false;
+    /// @dev Whether a given token has been revealed.
+    mapping (uint256 => bool) public revealed;
 
     /**
      * @dev Construct a new SPNFT contract.
@@ -29,11 +37,9 @@ contract SPNFT is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     }
 
     /**
-     * @dev Mint a token to the caller.
-     * @notice This function can only be called before the NFTs are revealed.
+     * @dev Mint a token to the caller. See {ERC721-_safeMint}.
      */
-    function mint() public {
-        require(!revealed, "SPNFT: already revealed");
+    function mint() public payable {
         uint256 tokenId = _tokenIdCounter.current();
         _tokenIdCounter.increment();
         _safeMint(msg.sender, tokenId);
@@ -62,7 +68,11 @@ contract SPNFT is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         override(ERC721, ERC721URIStorage)
         returns (string memory)
     {
-        return super.tokenURI(tokenId);
+        if (revealed[tokenId]) {
+            return super.tokenURI(tokenId);
+        } else {
+            return UNREVEALED_METADATA;
+        }
     }
 
     /**
