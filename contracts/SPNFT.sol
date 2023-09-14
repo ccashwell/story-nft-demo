@@ -118,6 +118,16 @@ contract SPNFT is
         return generateMetadata(tokenId, randomness[tokenId]);
     }
     
+    /**
+     * @dev Generate the metadata for a given token.
+     * @notice This is not really an ideal way to store the possible metadata strings,
+     * but it's a simple way to do it for this example. In a real application, you'd
+     * probably want to store the strings in a separate contract and/or use a more
+     * efficient encoding scheme. At the very least, you wouldn't want to publish all
+     * of the possible values in the contract bytecode ahead of time like this.
+     * @param tokenId The token ID for which to generate the metadata.
+     * @param tokenRandomness The randomness for the token.
+     */
     function generateMetadata(uint256 tokenId, uint256 tokenRandomness) internal pure returns (string memory) {
       string[21] memory textures = [
             "unrevealed", "chewy", "crunchy", "slimy", "slippery", "soggy", "spongy",
