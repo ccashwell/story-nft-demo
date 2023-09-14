@@ -36,34 +36,30 @@ The smart contract aims to implement an SP NFT (Story Protocol NFT) using the ER
 
 ### Libraries and Dependencies
 
-- TBD
+- OpenZeppelin: ERC-721 implementation with some basic extensions
+- Chainlink: VRFConsumerBaseV2 for random number generation
 
 ### Contract Design
 
-#### Features and Functions
-
-- TBD
-
-#### Data Structures
-
-- TBD
-
-#### Modifiers
-
-- TBD
-
 #### Events
 
-- TBD
+- `Minted`: emitted when an NFT is minted
+- `Revealed`: emitted when an NFT is revealed
 
 #### Security Considerations
 
-- TBD
+- The contract uses OpenZeppelin's ERC-721 implementation, which is audited and widely used.
+- The contract uses OpenZeppelin's Ownable contract to restrict access to certain functions.
+- The contract uses Chainlink's VRFConsumerBaseV2, which is audited and widely used.
+- The contract ensures that only a token's owner can reveal it.
 
 #### Gas Optimizations
 
-- TBD
+- The metadata is generated on the fly within the `tokenURI()` function. This approach is very gas efficient as it avoids actually storing the metadata on-chain and instead generates it as needed. The typical consumer of the metadata will be a web application, which means gas efficiency is not a major concern within the `tokenURI()` function.
+- The contract uses OpenZeppelin's ERC-721 implementation, which is not the most gas efficient implementation. It would be prudent to either develop a custom ERC-721 implementation or use a more gas efficient implementation from the community, like ERC721A.
+- Where possible, unused storage variables are deleted to earn a small gas refund.
 
 #### Test Cases
 
-- TBD
+- The contract has a relatively comprehensive test suite that covers all major functionality. The tests are written in Hardhat and can be run with `npx hardhat test`.
+- The tests written are E2E type tests, which means they test the contract as a whole. This is a good approach for a contract like this, as it is relatively simple and does not have many moving parts. For more complex contracts, especially when not built on top of widely used implementations, it would be prudent to write more granular unit tests.
