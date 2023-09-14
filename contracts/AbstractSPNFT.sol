@@ -181,4 +181,11 @@ abstract contract AbstractSPNFT is
     function revealed(uint256 tokenId) public view returns (bool) {
         return randomness[tokenId] != 0;
     }
+
+    /**
+     * @dev Withdraw the contract balance to the owner.
+     */
+    function withdraw() public onlyOwner {
+        payable(owner()).transfer(address(this).balance);
+    }
 }

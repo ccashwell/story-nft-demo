@@ -197,5 +197,14 @@ describe("SPNFT Tests", function () {
         await expect(vrfCoordinator.fulfillRandomWords(1, await separateCollectionSPNFT.getAddress())).to.emit(separateCollectionSPNFT, "Revealed").withArgs(0);
       });
     });
+
+    describe("Payout", function () {
+      it("Should send the payout to the owner", async function () {
+        const { inCollectionSPNFT, owner } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+        await expect(inCollectionSPNFT.withdraw()).to.changeEtherBalance(owner, MINT_PRICE);
+      });
+    });
   });
 });
