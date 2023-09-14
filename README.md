@@ -41,6 +41,10 @@ The smart contract aims to implement an SP NFT (Story Protocol NFT) using the ER
 
 ### Contract Design
 
+#### High-Level Overview
+
+The contract is designed to be relatively simple, with the majority of the logic being handled by OpenZeppelin's ERC-721 implementation and Chainlink's VRFConsumerBaseV2. The contract is designed to be flexible and extensible, with the ability to add new revealing approaches in the future. The contract is also designed to be gas efficient, with metadata being generated on the fly within the `tokenURI()` function.
+
 #### Events
 
 - `Minted`: emitted when an NFT is minted
@@ -49,8 +53,8 @@ The smart contract aims to implement an SP NFT (Story Protocol NFT) using the ER
 #### Security Considerations
 
 - The contract uses OpenZeppelin's ERC-721 implementation, which is audited and widely used.
-- The contract uses OpenZeppelin's Ownable contract to restrict access to certain functions.
-- The contract uses Chainlink's VRFConsumerBaseV2, which is audited and widely used.
+- The contract uses OpenZeppelin's `Ownable` contract to restrict access to certain functions.
+- The contract uses Chainlink's `VRFConsumerBaseV2`, which is audited and widely used.
 - The contract ensures that only a token's owner can reveal it.
 
 #### Gas Optimizations

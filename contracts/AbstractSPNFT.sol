@@ -4,7 +4,6 @@ pragma solidity ^0.8.9;
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
@@ -13,9 +12,8 @@ import "@openzeppelin/contracts/utils/Strings.sol";
  * @title SPNFT
  * @dev This contract is a simple example of an NFT that uses Chainlink VRF to reveal metadata.
  */
-contract SPNFT is
+abstract contract AbstractSPNFT is
     ERC721,
-    ERC721URIStorage,
     ERC721Burnable,
     Ownable,
     VRFConsumerBaseV2
@@ -29,10 +27,7 @@ contract SPNFT is
     Counters.Counter private _tokenIdCounter;
 
     /// @dev The approach to revealing the NFTs.
-    enum RevealingApproach {
-        IN_COLLECTION,
-        SEPARATE_COLLECTION
-    }
+    enum RevealingApproach { IN_COLLECTION, SEPARATE_COLLECTION }
     RevealingApproach public revealingApproach;
 
     /// @dev The cost to mint a token.
@@ -58,18 +53,24 @@ contract SPNFT is
      * @param _vrfKeyHash The key hash for the VRF.
      */
     constructor(
+        string memory _name,
+        string memory _symbol,
         RevealingApproach _revealingApproach,
         uint256 _mintCost,
         address _vrfCoordinator,
         uint64 _vrfSubscriptionId,
         bytes32 _vrfKeyHash
-    ) ERC721("Story Noodle NFT", "SNOODLE") VRFConsumerBaseV2(_vrfCoordinator) {
+    ) ERC721(_name, _symbol) VRFConsumerBaseV2(_vrfCoordinator) {
         revealingApproach = _revealingApproach;
         mintCost = _mintCost;
 
         VRF_COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
         VRF_SUBSCRIPTION_ID = _vrfSubscriptionId;
         VRF_KEY_HASH = _vrfKeyHash;
+
+        if (revealingApproach == RevealingApproach.SEPARATE_COLLECTION) {
+            _tokenIdCounter.increment();
+        }
     }
 
     /**
@@ -93,7 +94,7 @@ contract SPNFT is
      */
     function _burn(
         uint256 tokenId
-    ) internal virtual override(ERC721, ERC721URIStorage) {
+    ) internal virtual override(ERC721) {
         super._burn(tokenId);
     }
 
@@ -111,13 +112,13 @@ contract SPNFT is
         public
         view
         virtual
-        override(ERC721, ERC721URIStorage)
+        override(ERC721)
         returns (string memory)
     {
         require(tokenId < _tokenIdCounter.current(), "SPNFT: nonexistent token");
         return generateMetadata(tokenId, randomness[tokenId]);
     }
-    
+
     /**
      * @dev Generate the metadata for a given token.
      * @notice This is not really an ideal way to store the possible metadata strings,
@@ -128,51 +129,7 @@ contract SPNFT is
      * @param tokenId The token ID for which to generate the metadata.
      * @param tokenRandomness The randomness for the token.
      */
-    function generateMetadata(uint256 tokenId, uint256 tokenRandomness) internal pure returns (string memory) {
-      string[21] memory textures = [
-            "unrevealed", "chewy", "crunchy", "slimy", "slippery", "soggy", "spongy",
-            "squishy", "tender", "tough", "viscous", "gooey", "crispy", "leathery",
-            "crumbly", "dry", "flaky", "grainy", "greasy", "gritty", "mushy"
-        ];
-
-        string[21] memory flavors = [
-            "unrevealed", "sweet", "sour", "bitter", "savory", "spicy", "tart",
-            "tangy", "rich", "bland", "buttery", "cheesy", "creamy", "eggy", "fatty",
-            "fresh", "fruity", "garlicky", "herbal", "nutty", "salty"
-        ];
-
-        string[21] memory types = [
-            "unrevealed", "fettuccine", "linguine", "penne", "rigatoni", "macaroni",
-            "farfalle", "fusilli", "rotini", "cavatappi", "lasagna", "ravioli",
-            "tortellini", "gnocchi", "orzo", "ramen", "soba", "udon", "rice noodles",
-            "vermicelli", "angel hair"
-        ];
-
-        uint256 textureIndex;
-        uint256 flavorIndex;
-        uint256 typeIndex;
-
-        if (tokenRandomness != 0) {
-            textureIndex = (tokenRandomness % 20) + 1;
-            flavorIndex = (tokenRandomness % 20) + 1;
-            typeIndex = (tokenRandomness % 20) + 1;
-        }
-
-        return
-            string(
-                abi.encodePacked(
-                    '{"name":"Snoodle #',
-                    Strings.toString(tokenId),
-                    '",',
-                    '"description":"Story Noodle NFT.",',
-                    '"attributes":[',
-                    '{"trait_type":"Texture","value":"', textures[textureIndex], '"},',
-                    '{"trait_type":"Flavor","value":"', flavors[flavorIndex], '"},',
-                    '{"trait_type":"Type","value":"', types[typeIndex], '"}',
-                    "]}"
-                )
-            );
-    }
+    function generateMetadata(uint256 tokenId, uint256 tokenRandomness) internal view virtual returns (string memory);
 
     /**
      * @dev Check whether a given interface is supported. See {IERC165-supportsInterface}.
@@ -180,7 +137,7 @@ contract SPNFT is
      */
     function supportsInterface(
         bytes4 interfaceId
-    ) public view override(ERC721, ERC721URIStorage) returns (bool) {
+    ) public view override(ERC721) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
@@ -216,11 +173,16 @@ contract SPNFT is
         uint256[] memory randomWords
     ) internal override {
         uint256 tokenId = requests[requestId];
-        delete requests[requestId]; // tiny gas savings
-        randomness[tokenId] = randomWords[0];
-
-        emit Revealed(tokenId);
+        delete requests[requestId]; // tiny gas refund
+        _handleReveal(tokenId, randomWords[0]);
     }
+
+    /**
+     * @dev Handle the reveal of a token.
+     * @param tokenId The token ID to reveal.
+     * @param tokenRandomness The randomness for the token.
+     */
+    function _handleReveal(uint256 tokenId, uint256 tokenRandomness) internal virtual;
 
     /**
      * @dev Check whether a token has been revealed.

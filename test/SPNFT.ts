@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { SPNFT, VRFCoordinatorMock } from "../typechain-types"
+import { InCollectionSPNFT, VRFCoordinatorMock } from "../typechain-types"
 
 enum RevealingApproach {
   INTERNAL = 0,
@@ -14,28 +14,31 @@ describe("SPNFT Tests", function () {
     const [owner, otherAccount] = await ethers.getSigners();
 
     const VRFC = await ethers.getContractFactory("VRFCoordinatorMock");
-    const SPNFT = await ethers.getContractFactory("SPNFT");
+    const InCollectionSPNFT = await ethers.getContractFactory("InCollectionSPNFT");
 
     const vrfCoordinator = await VRFC.deploy();
     await vrfCoordinator.createSubscription();
-    await vrfCoordinator.fundSubscription(1, ethers.parseEther("1"));
+    const subId = 1;
+    const keyHash = "0xd89b2bf150e3b9e13446986e571fb9cab24b13cea0a43ea20a6049a85cc807cc";
 
-    const spnft = await SPNFT.deploy(revealingApproach, MINT_PRICE, await vrfCoordinator.getAddress(), 1, "0xd89b2bf150e3b9e13446986e571fb9cab24b13cea0a43ea20a6049a85cc807cc");
+    await vrfCoordinator.fundSubscription(subId, ethers.parseEther("1"));
+
+    const spnft = await InCollectionSPNFT.deploy(
+      "Story Noodle NFT",
+      "SNOODLE",
+      MINT_PRICE,
+      await vrfCoordinator.getAddress(),
+      subId,
+      keyHash,
+    );
+
     await vrfCoordinator.addConsumer(1, await spnft.getAddress());
 
-    return { spnft, vrfCoordinator, subId: 1, revealingApproach, owner, otherAccount };
+    return { spnft, vrfCoordinator, subId, revealingApproach, owner, otherAccount };
   }
 
   describe("E2E", function () {
     describe("Deployment", function () {
-      it("Should set the right revealing approach", async function () {
-        const { spnft: internallyRevealedSPNFT } = await deployFixtures(RevealingApproach.INTERNAL);
-        expect(await internallyRevealedSPNFT.revealingApproach()).to.equal(RevealingApproach.INTERNAL);
-
-        const { spnft: externallyRevealedSPNFT } = await deployFixtures(RevealingApproach.EXTERNAL);
-        expect(await externallyRevealedSPNFT.revealingApproach()).to.equal(RevealingApproach.EXTERNAL);
-      });
-
       it("Should set the right owner", async function () {
         const { spnft, owner } = await deployFixtures();
         expect(await spnft.owner()).to.equal(owner.address);
@@ -77,8 +80,8 @@ describe("SPNFT Tests", function () {
         await spnft.mint({ value: MINT_PRICE });
         const tokenURI = await spnft.tokenURI(0);
         expect(tokenURI).to.equal(JSON.stringify({
-          name: "Snoodle #0",
-          description: "Story Noodle NFT.",
+          name: "SNOODLE #0",
+          description: "Story Noodle NFT",
           attributes: [
             { trait_type: "Texture", value: "unrevealed" },
             { trait_type: "Flavor", value: "unrevealed" },
@@ -93,8 +96,8 @@ describe("SPNFT Tests", function () {
       });
     });
 
-    describe("Revealing", function () {
-      let spnft: SPNFT;
+    describe("Revealing (IN_COLLECTION)", function () {
+      let spnft: InCollectionSPNFT;
       let vrfCoordinator: VRFCoordinatorMock;
 
       beforeEach(async function () {
@@ -127,8 +130,8 @@ describe("SPNFT Tests", function () {
         await vrfCoordinator.fulfillRandomWordsWithOverride(1, await spnft.getAddress(), [19]);
         const tokenURI = await spnft.tokenURI(0);
         expect(tokenURI).to.equal(JSON.stringify({
-          name: "Snoodle #0",
-          description: "Story Noodle NFT.",
+          name: "SNOODLE #0",
+          description: "Story Noodle NFT",
           attributes: [
             { trait_type: "Texture", value: "mushy" },
             { trait_type: "Flavor", value: "salty" },
