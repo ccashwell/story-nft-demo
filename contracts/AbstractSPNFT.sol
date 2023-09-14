@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
- * @title SPNFT
+ * @title AbstractSPNFT
  * @dev This contract is a simple example of an NFT that uses Chainlink VRF to reveal metadata.
  */
 abstract contract AbstractSPNFT is
@@ -25,10 +25,6 @@ abstract contract AbstractSPNFT is
 
     /// @dev The counter for token IDs.
     Counters.Counter private _tokenIdCounter;
-
-    /// @dev The approach to revealing the NFTs.
-    enum RevealingApproach { IN_COLLECTION, SEPARATE_COLLECTION }
-    RevealingApproach public revealingApproach;
 
     /// @dev The cost to mint a token.
     uint256 public mintCost;
@@ -46,7 +42,6 @@ abstract contract AbstractSPNFT is
 
     /**
      * @dev Construct a new SPNFT contract.
-     * @param _revealingApproach The approach to revealing the NFTs.
      * @param _mintCost The cost to mint a token.
      * @param _vrfCoordinator The address of the VRF coordinator.
      * @param _vrfSubscriptionId The subscription ID for the VRF.
@@ -55,22 +50,16 @@ abstract contract AbstractSPNFT is
     constructor(
         string memory _name,
         string memory _symbol,
-        RevealingApproach _revealingApproach,
         uint256 _mintCost,
         address _vrfCoordinator,
         uint64 _vrfSubscriptionId,
         bytes32 _vrfKeyHash
     ) ERC721(_name, _symbol) VRFConsumerBaseV2(_vrfCoordinator) {
-        revealingApproach = _revealingApproach;
         mintCost = _mintCost;
 
         VRF_COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
         VRF_SUBSCRIPTION_ID = _vrfSubscriptionId;
         VRF_KEY_HASH = _vrfKeyHash;
-
-        if (revealingApproach == RevealingApproach.SEPARATE_COLLECTION) {
-            _tokenIdCounter.increment();
-        }
     }
 
     /**
@@ -146,6 +135,7 @@ abstract contract AbstractSPNFT is
      * @param tokenId The token ID to reveal.
      */
     function reveal(uint256 tokenId) public {
+        require(tokenId < _tokenIdCounter.current(), "SPNFT: nonexistent token");
         require(ownerOf(tokenId) == msg.sender, "SPNFT: not owner");
         require(randomness[tokenId] == 0, "SPNFT: already revealed");
 
@@ -156,7 +146,7 @@ abstract contract AbstractSPNFT is
             VRF_KEY_HASH,
             VRF_SUBSCRIPTION_ID,
             3,
-            70_000,
+            750_000,
             1
         );
 

@@ -1,8 +1,43 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.9;
-import "./AbstractSPNFT.sol";
 
-contract InCollectionSPNFT is AbstractSPNFT {
+import "./AbstractSPNFT.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+
+/**
+ * @title SomeOtherCollection
+ * @notice This is a simple example of an ERC721 contract that stores the metadata
+ * received from the SPNFT contract. This is a simplified example, but it should be
+ * sufficient to demonstrate the concept.
+ */
+contract SomeOtherCollection is ERC721, ERC721URIStorage, Ownable {
+    event Minted(address indexed to, uint256 indexed tokenId, string metadata);
+
+    constructor() ERC721("Separately Revealed NFT", "SPNFT") {}
+
+    function mint(address to, uint256 tokenId, string memory metadata) public onlyOwner {
+        _mint(to, tokenId);
+        _setTokenURI(tokenId, metadata);
+        emit Minted(to, tokenId, metadata);
+    }
+
+    function _burn(uint256 tokenId) internal virtual override(ERC721, ERC721URIStorage) {
+        super._burn(tokenId);
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721, ERC721URIStorage) returns (bool) {
+        return super.supportsInterface(interfaceId);
+    }
+
+    function tokenURI(uint256 tokenId) public view virtual override(ERC721, ERC721URIStorage) returns (string memory) {
+        return super.tokenURI(tokenId);
+    }
+}
+
+contract SeparateCollectionSPNFT is AbstractSPNFT {
+    /// @dev The collection that will store the revealed tokens.
+    SomeOtherCollection public _collection;
+
     constructor(
         string memory _name,
         string memory _symbol,
@@ -17,7 +52,11 @@ contract InCollectionSPNFT is AbstractSPNFT {
         _vrfCoordinator,
         _vrfSubscriptionId,
         _vrfKeyHash
-    ) {}
+    ) {
+        // Deploy the collection contract. Probably want to use a factory
+        // contract or pass this to the constructor in a real application.
+        _collection = new SomeOtherCollection();
+    }
 
     /**
      * @dev Generate the metadata for a given token.
@@ -80,7 +119,17 @@ contract InCollectionSPNFT is AbstractSPNFT {
      * @param tokenRandomness The randomness for the token.
      */
     function _handleReveal(uint256 tokenId, uint256 tokenRandomness) internal override {
-        randomness[tokenId] = tokenRandomness;
+        address owner = ownerOf(tokenId);
+        _burn(tokenId);
+        _collection.mint(owner, tokenId, generateMetadata(tokenId, tokenRandomness));
         emit Revealed(tokenId);
+    }
+
+    /**
+     * @dev Transfer the ownership of the revealed collection to a new owner.
+     * @param newOwner The address of the new owner.
+     */
+    function transferRevealedCollection(address newOwner) public onlyOwner {
+        _collection.transferOwnership(newOwner);
     }
 }
