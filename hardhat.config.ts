@@ -13,7 +13,7 @@ const config: HardhatUserConfig = {
   },
   networks: {
     sepolia: {
-      url: `wss://sepolia.infura.io/ws/v3/${process.env.INFURA_PROJECT_ID}`,
+      url: `https://sepolia.infura.io/v3/${process.env.INFURA_PROJECT_ID}`,
       accounts: [`0x${process.env.SEPOLIA_PRIVATE_KEY}`],
     }
   }
