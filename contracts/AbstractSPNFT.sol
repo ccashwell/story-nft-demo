@@ -4,13 +4,16 @@ pragma solidity ^0.8.9;
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * @title AbstractSPNFT
- * @dev This contract is a simple example of an NFT that uses Chainlink VRF to reveal metadata.
+ * @dev This contract is a simple example of an NFT that uses Chainlink VRF to reveal metadata and allows
+ * staking the NFT to earn rewards. It is intended to be used as a base contract for variants that handle
+ * the revealing phase in different ways.
  */
 abstract contract AbstractSPNFT is
     ERC721,
@@ -22,6 +25,9 @@ abstract contract AbstractSPNFT is
 
     event Minted(address indexed to, uint256 indexed tokenId);
     event Revealed(uint256 indexed tokenId);
+    event Staked(uint256 indexed tokenId);
+    event Claimed(uint256 indexed tokenId, uint256 rewards);
+    event Unstaked(uint256 indexed tokenId);
 
     /// @dev The counter for token IDs.
     Counters.Counter private _tokenIdCounter;
@@ -39,6 +45,24 @@ abstract contract AbstractSPNFT is
 
     /// @dev Randomness for a given token.
     mapping(uint256 => uint256) public randomness;
+
+    /// @dev Staking reward token.
+    StakingRewardToken public rewardToken;
+
+    /// @dev Staking reward rate (% APY).
+    uint256 public rewardRate = 5;
+
+    /// @dev Staking reward conversion ratio (1000 rewards = 1 NFT).
+    uint256 public rewardConversionRatio = 1000;
+
+    /// @dev Staking info
+    struct StakingInfo {
+        uint256 stakedAt;
+        uint256 rewards;
+    }
+
+    // Mapping from tokenId to staking info
+    mapping(uint256 => StakingInfo) public stakingInfo;
 
     /**
      * @dev Construct a new SPNFT contract.
@@ -60,6 +84,12 @@ abstract contract AbstractSPNFT is
         VRF_COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
         VRF_SUBSCRIPTION_ID = _vrfSubscriptionId;
         VRF_KEY_HASH = _vrfKeyHash;
+
+        // Deploy the reward token.
+        rewardToken = new StakingRewardToken(
+            string(abi.encodePacked(_name, " Rewards")),
+            string(abi.encodePacked("r", _symbol))
+        );
     }
 
     /**
@@ -187,5 +217,108 @@ abstract contract AbstractSPNFT is
      */
     function withdraw() public onlyOwner {
         payable(owner()).transfer(address(this).balance);
+    }
+
+    /**
+     * @dev Stake a token.
+     * @param tokenId The token ID to stake.
+     */
+    function stake(uint256 tokenId) public {
+        require(tokenId < _tokenIdCounter.current(), "SPNFT: nonexistent token");
+        require(ownerOf(tokenId) == msg.sender, "SPNFT: not owner");
+        require(randomness[tokenId] != 0, "SPNFT: not revealed");
+        require(stakingInfo[tokenId].stakedAt == 0, "SPNFT: already staked");
+
+        stakingInfo[tokenId].stakedAt = block.timestamp;
+        emit Staked(tokenId);
+    }
+
+    /**
+     * @dev Claim staking rewards for a token.
+     * @param tokenId The token ID to claim rewards for.
+     */
+    function claimRewards(uint256 tokenId) public {
+        require(ownerOf(tokenId) == msg.sender, "SPNFT: not owner");
+        require(stakingInfo[tokenId].stakedAt != 0, "SPNFT: not staked");
+
+        // Determine the elapsed time since the stake was last touched
+        uint256 elapsedTime = block.timestamp - stakingInfo[tokenId].stakedAt;
+        
+        // Calculate the rewards
+        uint256 rewards = (mintCost * rewardRate / 100) * elapsedTime / 365 days;
+        rewards = rewards * rewardConversionRatio;
+
+        // Update staking info
+        stakingInfo[tokenId].stakedAt = block.timestamp;
+
+        // Mint rewards to the caller
+        require(rewardToken.mint(msg.sender, rewards), "SPNFT: reward mint failed");
+        emit Claimed(tokenId, rewards);
+    }
+
+    /**
+     * @dev Unstake a token.
+     * @param tokenId The token ID to unstake.
+     */
+    function unstake(uint256 tokenId) public {
+        require(ownerOf(tokenId) == msg.sender, "SPNFT: not owner");
+        require(stakingInfo[tokenId].stakedAt != 0, "SPNFT: not staked");
+
+        // Claim any pending rewards
+        claimRewards(tokenId);
+
+        // Update staking info
+        stakingInfo[tokenId].stakedAt = 0;
+
+        emit Unstaked(tokenId);
+    }
+
+    /**
+     * @dev Set the staking reward rate (APY).
+     * @param _rewardRate The new reward rate.
+     */
+    function setRewardRate(uint256 _rewardRate) public onlyOwner {
+        rewardRate = _rewardRate;
+    }
+
+    /**
+     * @dev Set the staking reward conversion ratio (n rewards = 1 NFT).
+     * @param _rewardConversionRatio The new reward conversion ratio.
+     */
+    function setRewardConversionRatio(uint256 _rewardConversionRatio) public onlyOwner {
+        rewardConversionRatio = _rewardConversionRatio;
+    }
+
+    /**
+     * @dev Hook that is called before any token transfer. See {ERC721-_beforeTokenTransfer}.
+     * @param from The address to transfer from.
+     * @param to The address to transfer to.
+     * @param tokenId The token ID to transfer.
+     * @param batchSize The number of tokens to transfer.
+     */
+    function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint256 tokenId,
+        uint256 batchSize
+    ) internal virtual override(ERC721) {
+        super._beforeTokenTransfer(from, to, tokenId, batchSize);
+        require(stakingInfo[tokenId].stakedAt == 0, "SPNFT: staked tokens cannot be transferred");
+    }
+}
+
+/**
+ * @title StakingRewardToken
+ * @dev This is a simple example of a reward token that can be minted on the fly.
+ */
+contract StakingRewardToken is ERC20, Ownable {
+    constructor(
+        string memory _name,
+        string memory _symbol
+    ) ERC20(_name, _symbol) {}
+
+    function mint(address to, uint256 amount) public onlyOwner returns (bool) {
+        _mint(to, amount);
+        return true;
     }
 }

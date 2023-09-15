@@ -1,7 +1,8 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { InCollectionSPNFT, SeparateCollectionSPNFT, VRFCoordinatorMock } from "../typechain-types"
+import { InCollectionSPNFT, SeparateCollectionSPNFT, StakingRewardToken, VRFCoordinatorMock } from "../typechain-types"
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
+import { time } from "@nomicfoundation/hardhat-network-helpers"
 
 const MINT_PRICE = ethers.parseEther("0.1");
 
@@ -204,6 +205,171 @@ describe("SPNFT Tests", function () {
         await inCollectionSPNFT.mint({ value: MINT_PRICE });
         await inCollectionSPNFT.reveal(0);
         await expect(inCollectionSPNFT.withdraw()).to.changeEtherBalance(owner, MINT_PRICE);
+      });
+
+      it("Should not allow non-owners to withdraw", async function () {
+        const { inCollectionSPNFT, otherAccount } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await expect(inCollectionSPNFT.connect(otherAccount).withdraw()).to.be.revertedWith("Ownable: caller is not the owner");
+      });
+    });
+
+    describe("Staking", function () {
+      it("Should allow staking of revealed tokens", async function () {
+        const { inCollectionSPNFT, vrfCoordinator, owner } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+        await vrfCoordinator.fulfillRandomWords(1, await inCollectionSPNFT.getAddress());
+        const stakeTx = await inCollectionSPNFT.stake(0);
+        const stakeBlock = await stakeTx.getBlock();
+        stakeBlock?.timestamp;
+        expect((await inCollectionSPNFT.stakingInfo(0)).stakedAt).to.equal(stakeBlock?.timestamp);
+      });
+
+      it("Should emit a Staked event", async function () {
+        const { inCollectionSPNFT, vrfCoordinator, owner } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+        vrfCoordinator.fulfillRandomWords(1, await inCollectionSPNFT.getAddress())
+        await expect(inCollectionSPNFT.stake(0)).to.emit(inCollectionSPNFT, "Staked").withArgs(0);
+      });
+
+      it("Should not transfer the token away from the owner", async function () {
+        const { inCollectionSPNFT, vrfCoordinator, owner } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+        await vrfCoordinator.fulfillRandomWords(1, await inCollectionSPNFT.getAddress());
+        await inCollectionSPNFT.stake(0);
+        expect(await inCollectionSPNFT.ownerOf(0)).to.equal(owner.address);
+      });
+
+      it("Should not allow staking of unrevealed tokens", async function () {
+        const { inCollectionSPNFT } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await expect(inCollectionSPNFT.stake(0)).to.be.revertedWith("SPNFT: not revealed");
+      });
+
+      it("Should not allow staking of already staked tokens", async function () {
+        const { inCollectionSPNFT, vrfCoordinator } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+        await vrfCoordinator.fulfillRandomWords(1, await inCollectionSPNFT.getAddress());
+        await inCollectionSPNFT.stake(0);
+        await expect(inCollectionSPNFT.stake(0)).to.be.revertedWith("SPNFT: already staked");
+      });
+
+      it("Should not allow staking by non-owners", async function () {
+        const { inCollectionSPNFT, vrfCoordinator, otherAccount } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+        await vrfCoordinator.fulfillRandomWords(1, await inCollectionSPNFT.getAddress());
+        await expect(inCollectionSPNFT.connect(otherAccount).stake(0)).to.be.revertedWith("SPNFT: not owner");
+      });
+
+      it("Should not allow staking of non-existent tokens", async function () {
+        const { inCollectionSPNFT } = await deployFixtures();
+        await expect(inCollectionSPNFT.stake(0)).to.be.revertedWith("SPNFT: nonexistent token");
+      });
+
+      it("Should allow unstaking of staked tokens", async function () {
+        const { inCollectionSPNFT, vrfCoordinator } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+        await vrfCoordinator.fulfillRandomWords(1, await inCollectionSPNFT.getAddress());
+        await inCollectionSPNFT.stake(0);
+        await expect(inCollectionSPNFT.unstake(0)).not.to.be.reverted;
+        expect((await inCollectionSPNFT.stakingInfo(0)).stakedAt).to.equal(0);
+      });
+
+      it("Should emit an Unstaked event", async function () {
+        const { inCollectionSPNFT, vrfCoordinator } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+        await vrfCoordinator.fulfillRandomWords(1, await inCollectionSPNFT.getAddress());
+        await inCollectionSPNFT.stake(0);
+        await expect(inCollectionSPNFT.unstake(0)).to.emit(inCollectionSPNFT, "Unstaked").withArgs(0);
+      });
+
+      it("Should not allow unstaking of unstaked tokens", async function () {
+        const { inCollectionSPNFT } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await expect(inCollectionSPNFT.unstake(0)).to.be.revertedWith("SPNFT: not staked");
+      });
+
+      it("Should automatically claim rewards when unstaking", async function () {
+        const { inCollectionSPNFT, vrfCoordinator } = await deployFixtures();
+
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+        await vrfCoordinator.fulfillRandomWordsWithOverride(1, await inCollectionSPNFT.getAddress(), [19]);
+        await inCollectionSPNFT.stake(0);
+
+        await time.setNextBlockTimestamp(await time.latest() + 60 * 60 * 24 * 365);
+        await expect(inCollectionSPNFT.unstake(0)).to.emit(inCollectionSPNFT, "Claimed").withArgs(0, ethers.parseEther("5"));
+      });
+
+      it("Should allow the staker to claim pending rewards", async function () {
+        const { inCollectionSPNFT, vrfCoordinator, owner } = await deployFixtures();
+        const rewardToken: StakingRewardToken = await ethers.getContractAt("StakingRewardToken", await inCollectionSPNFT.rewardToken());
+
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+        await vrfCoordinator.fulfillRandomWords(1, await inCollectionSPNFT.getAddress());
+        await inCollectionSPNFT.stake(0);
+        await expect(inCollectionSPNFT.claimRewards(0)).not.to.be.reverted;
+      });
+
+      it("Should allow the owner to update the reward configs", async function () {
+        const { inCollectionSPNFT } = await deployFixtures();
+        await expect(inCollectionSPNFT.setRewardRate(ethers.parseEther("0.1"))).not.to.be.reverted;
+        expect(await inCollectionSPNFT.rewardRate()).to.equal(ethers.parseEther("0.1"));
+
+        await expect(inCollectionSPNFT.setRewardConversionRatio(1)).not.to.be.reverted;
+        expect(await inCollectionSPNFT.rewardConversionRatio()).to.equal(1);
+      });
+
+      it("Should not allow others to update the reward configs", async function () {
+        const { inCollectionSPNFT, otherAccount } = await deployFixtures();
+        await expect(inCollectionSPNFT.connect(otherAccount).setRewardRate(ethers.parseEther("0.1"))).to.be.revertedWith("Ownable: caller is not the owner");
+      });
+
+      describe("Rewards", function () {
+        let inCollectionSPNFT: InCollectionSPNFT;
+
+        beforeEach(async function () {
+          const fixtures = await deployFixtures();
+          inCollectionSPNFT = fixtures.inCollectionSPNFT;
+          const vrfCoordinator = fixtures.vrfCoordinator;
+
+          await inCollectionSPNFT.mint({ value: MINT_PRICE });
+          await inCollectionSPNFT.reveal(0);
+          await vrfCoordinator.fulfillRandomWords(1, await inCollectionSPNFT.getAddress());
+          await inCollectionSPNFT.stake(0);
+        });
+
+        it("Should be properly calculated after 36.5 days", async function () {
+          // 5% APY * 36.5 days = 0.5 tokens
+          await time.setNextBlockTimestamp(await time.latest() + 60 * 60 * 24 * 36.5);
+          await expect(inCollectionSPNFT.claimRewards(0)).to.changeTokenBalance(await ethers.getContractAt("StakingRewardToken", await inCollectionSPNFT.rewardToken()), await inCollectionSPNFT.owner(), ethers.parseEther("0.5"));
+        });
+
+        it("Should be properly calculated after 6 months", async function () {
+          // 5% APY * 6 months = 2.5 tokens
+          await time.setNextBlockTimestamp(await time.latest() + 60 * 60 * 24 * 365 / 2);
+          await expect(inCollectionSPNFT.claimRewards(0)).to.changeTokenBalance(await ethers.getContractAt("StakingRewardToken", await inCollectionSPNFT.rewardToken()), await inCollectionSPNFT.owner(), ethers.parseEther("2.5"));
+        });
+
+        it("Should be properly calculated after 1 year", async function () {
+          // 5% APY * 1 year = 5 tokens
+          await time.setNextBlockTimestamp(await time.latest() + 60 * 60 * 24 * 365);
+          await expect(inCollectionSPNFT.claimRewards(0)).to.changeTokenBalance(await ethers.getContractAt("StakingRewardToken", await inCollectionSPNFT.rewardToken()), await inCollectionSPNFT.owner(), ethers.parseEther("5"));
+        });
+
+        it("Should be properly calculated after 5 years", async function () {
+          // 5% APY * 5 years = 25 tokens
+          await time.setNextBlockTimestamp(await time.latest() + 60 * 60 * 24 * 365 * 5);
+          await expect(inCollectionSPNFT.claimRewards(0)).to.changeTokenBalance(await ethers.getContractAt("StakingRewardToken", await inCollectionSPNFT.rewardToken()), await inCollectionSPNFT.owner(), ethers.parseEther("25"));
+        });
       });
     });
   });
