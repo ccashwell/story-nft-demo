@@ -333,6 +333,29 @@ describe("SPNFT Tests", function () {
         await expect(inCollectionSPNFT.connect(otherAccount).setRewardRate(ethers.parseEther("0.1"))).to.be.revertedWith("Ownable: caller is not the owner");
       });
 
+      it("Should not allow staked tokens to be transferred", async function () {
+        const { inCollectionSPNFT, vrfCoordinator, owner, otherAccount } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+
+        await vrfCoordinator.fulfillRandomWords(1, await inCollectionSPNFT.getAddress());
+        await inCollectionSPNFT.stake(0);
+
+        await expect(inCollectionSPNFT.transferFrom(owner.address, otherAccount.address, 0)).to.be.revertedWith("SPNFT: staked tokens cannot be transferred");
+      });
+
+      it("Should allow unstaked tokens to be freely transferred", async function () {
+        const { inCollectionSPNFT, vrfCoordinator, owner, otherAccount } = await deployFixtures();
+        await inCollectionSPNFT.mint({ value: MINT_PRICE });
+        await inCollectionSPNFT.reveal(0);
+
+        await vrfCoordinator.fulfillRandomWords(1, await inCollectionSPNFT.getAddress());
+        await inCollectionSPNFT.stake(0);
+        await inCollectionSPNFT.unstake(0);
+
+        await expect(inCollectionSPNFT.transferFrom(owner.address, otherAccount.address, 0)).not.to.be.reverted;
+      });
+
       describe("Rewards", function () {
         let inCollectionSPNFT: InCollectionSPNFT;
 
