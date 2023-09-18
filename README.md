@@ -70,5 +70,5 @@ The contract is designed to be relatively simple, with the majority of the logic
 
 #### Test Cases
 
-- The contract has a relatively comprehensive test suite that covers all major functionality. The tests are written in Hardhat and can be run with `npx hardhat test`.
-- The tests written are E2E type tests, which means they test the contract as a whole. This is a good approach for a contract like this, as it is relatively simple and does not have many moving parts. For more complex contracts, especially when not built on top of widely used implementations, it would be prudent to write more granular unit tests.
+- The contract has a relatively comprehensive test suite that covers all major functionality. The tests are written with Hardhat's Chai matchers and can be run with `npx hardhat test`.
+- The tests written are E2E type tests, which means they test the contract as a whole. This is a good approach for a contract like this, as it is relatively simple demo project and does not have many moving parts. For more complex contracts, especially when not built on top of widely used implementations, it would be prudent to write more granular unit tests.

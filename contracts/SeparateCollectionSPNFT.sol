@@ -34,6 +34,15 @@ contract SomeOtherCollection is ERC721, ERC721URIStorage, Ownable {
     }
 }
 
+/**
+ * @title SeparateCollectionSPNFT
+ * @dev This contract implements the SPNFT interface and addresses the "separate collection" use case.
+ * In this use case, the token metadata is generated from a set of possible values, and the randomness
+ * is used to select the values for a given token. Rather than storing the randomness in the contract,
+ * it is used to generate the metadata string (JSON) for the token, and a new token is minted in a
+ * separate collection contract. The original token is burned upon reveal, and the user will receive
+ * the new token upon completion of the reveal workflow.
+ */
 contract SeparateCollectionSPNFT is AbstractSPNFT {
     /// @dev The collection that will store the revealed tokens.
     SomeOtherCollection public _collection;

@@ -2,6 +2,13 @@
 pragma solidity ^0.8.9;
 import "./AbstractSPNFT.sol";
 
+/**
+ * @title InCollectionSPNFT
+ * @dev This contract implements the SPNFT interface and addresses the "in collection" use case.
+ * In this use case, the token metadata is generated from a set of possible values, and the
+ * randomness is used to select the values for a given token. The randomness is stored in the
+ * contract, and the metadata string (JSON) is generated on-the-fly from the stored randomness.
+ */
 contract InCollectionSPNFT is AbstractSPNFT {
     constructor(
         string memory _name,

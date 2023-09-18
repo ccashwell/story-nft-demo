@@ -13,7 +13,8 @@ import "@openzeppelin/contracts/utils/Strings.sol";
  * @title AbstractSPNFT
  * @dev This contract is a simple example of an NFT that uses Chainlink VRF to reveal metadata and allows
  * staking the NFT to earn rewards. It is intended to be used as a base contract for variants that handle
- * the revealing phase in different ways.
+ * the revealing phase in different ways. See InCollectionSPNFT.sol and SeparateCollectionSPNFT.sol for
+ * examples of how to extend this contract.
  */
 abstract contract AbstractSPNFT is
     ERC721,
@@ -39,6 +40,9 @@ abstract contract AbstractSPNFT is
     VRFCoordinatorV2Interface immutable VRF_COORDINATOR;
     uint64 immutable VRF_SUBSCRIPTION_ID;
     bytes32 immutable VRF_KEY_HASH;
+    uint16 constant VRF_NUM_WORDS = 1;
+    uint16 constant VRF_MIN_CONFIRMATIONS = 3;
+    uint32 constant VRF_CALLBACK_GAS_LIMIT = 750_000;
 
     /// @dev VRF request ID to token ID mapping.
     mapping(uint256 => uint256) requests;
@@ -52,10 +56,10 @@ abstract contract AbstractSPNFT is
     /// @dev Staking reward rate (% APY).
     uint256 public rewardRate = 5;
 
-    /// @dev Staking reward conversion ratio (1000 rewards = 1 NFT).
+    /// @dev Staking reward conversion ratio (value of 1000 R == 1 NFT).
     uint256 public rewardConversionRatio = 1000;
 
-    /// @dev Staking info
+    /// @dev Staking info for a given token.
     struct StakingInfo {
         uint256 stakedAt;
         uint256 rewards;
@@ -63,6 +67,27 @@ abstract contract AbstractSPNFT is
 
     // Mapping from tokenId to staking info
     mapping(uint256 => StakingInfo) public stakingInfo;
+
+    /**
+     * @dev Modifier to check that the caller is the owner of a given token.
+     * @param tokenId The token ID to check.
+     */
+    modifier onlyTokenOwner(uint256 tokenId) {
+        require(ownerOf(tokenId) == msg.sender, "SPNFT: not owner");
+        _;
+    }
+
+    /**
+     * @dev Modifier to check that a given token exists.
+     * @param tokenId The token ID to check.
+     */
+    modifier onlyExistingToken(uint256 tokenId) {
+        require(
+            tokenId < _tokenIdCounter.current(),
+            "SPNFT: nonexistent token"
+        );
+        _;
+    }
 
     /**
      * @dev Construct a new SPNFT contract.
@@ -111,9 +136,7 @@ abstract contract AbstractSPNFT is
      * @dev Burn a token. See {ERC721Burnable-burn}.
      * @param tokenId The token ID to burn.
      */
-    function _burn(
-        uint256 tokenId
-    ) internal virtual override(ERC721) {
+    function _burn(uint256 tokenId) internal virtual override(ERC721) {
         super._burn(tokenId);
     }
 
@@ -132,9 +155,9 @@ abstract contract AbstractSPNFT is
         view
         virtual
         override(ERC721)
+        onlyExistingToken(tokenId)
         returns (string memory)
     {
-        require(tokenId < _tokenIdCounter.current(), "SPNFT: nonexistent token");
         return generateMetadata(tokenId, randomness[tokenId]);
     }
 
@@ -148,7 +171,10 @@ abstract contract AbstractSPNFT is
      * @param tokenId The token ID for which to generate the metadata.
      * @param tokenRandomness The randomness for the token.
      */
-    function generateMetadata(uint256 tokenId, uint256 tokenRandomness) internal view virtual returns (string memory);
+    function generateMetadata(
+        uint256 tokenId,
+        uint256 tokenRandomness
+    ) internal view virtual returns (string memory);
 
     /**
      * @dev Check whether a given interface is supported. See {IERC165-supportsInterface}.
@@ -164,9 +190,9 @@ abstract contract AbstractSPNFT is
      * @dev Reveal a token.
      * @param tokenId The token ID to reveal.
      */
-    function reveal(uint256 tokenId) public {
-        require(tokenId < _tokenIdCounter.current(), "SPNFT: nonexistent token");
-        require(ownerOf(tokenId) == msg.sender, "SPNFT: not owner");
+    function reveal(
+        uint256 tokenId
+    ) public onlyExistingToken(tokenId) onlyTokenOwner(tokenId) {
         require(randomness[tokenId] == 0, "SPNFT: already revealed");
 
         // Request randomness from the Chainlink VRF. Note that all of these
@@ -175,9 +201,9 @@ abstract contract AbstractSPNFT is
         uint256 requestId = VRF_COORDINATOR.requestRandomWords(
             VRF_KEY_HASH,
             VRF_SUBSCRIPTION_ID,
-            3,
-            750_000,
-            1
+            VRF_MIN_CONFIRMATIONS,
+            VRF_CALLBACK_GAS_LIMIT,
+            VRF_NUM_WORDS
         );
 
         requests[requestId] = tokenId;
@@ -202,7 +228,10 @@ abstract contract AbstractSPNFT is
      * @param tokenId The token ID to reveal.
      * @param tokenRandomness The randomness for the token.
      */
-    function _handleReveal(uint256 tokenId, uint256 tokenRandomness) internal virtual;
+    function _handleReveal(
+        uint256 tokenId,
+        uint256 tokenRandomness
+    ) internal virtual;
 
     /**
      * @dev Check whether a token has been revealed.
@@ -223,9 +252,9 @@ abstract contract AbstractSPNFT is
      * @dev Stake a token.
      * @param tokenId The token ID to stake.
      */
-    function stake(uint256 tokenId) public {
-        require(tokenId < _tokenIdCounter.current(), "SPNFT: nonexistent token");
-        require(ownerOf(tokenId) == msg.sender, "SPNFT: not owner");
+    function stake(
+        uint256 tokenId
+    ) public onlyExistingToken(tokenId) onlyTokenOwner(tokenId) {
         require(randomness[tokenId] != 0, "SPNFT: not revealed");
         require(stakingInfo[tokenId].stakedAt == 0, "SPNFT: already staked");
 
@@ -237,22 +266,25 @@ abstract contract AbstractSPNFT is
      * @dev Claim staking rewards for a token.
      * @param tokenId The token ID to claim rewards for.
      */
-    function claimRewards(uint256 tokenId) public {
-        require(ownerOf(tokenId) == msg.sender, "SPNFT: not owner");
+    function claimRewards(uint256 tokenId) public onlyTokenOwner(tokenId) {
         require(stakingInfo[tokenId].stakedAt != 0, "SPNFT: not staked");
 
         // Determine the elapsed time since the stake was last touched
         uint256 elapsedTime = block.timestamp - stakingInfo[tokenId].stakedAt;
-        
+
         // Calculate the rewards
-        uint256 rewards = (mintCost * rewardRate / 100) * elapsedTime / 365 days;
+        uint256 rewards = (((mintCost * rewardRate) / 100) * elapsedTime) /
+            365 days;
         rewards = rewards * rewardConversionRatio;
 
         // Update staking info
         stakingInfo[tokenId].stakedAt = block.timestamp;
 
         // Mint rewards to the caller
-        require(rewardToken.mint(msg.sender, rewards), "SPNFT: reward mint failed");
+        require(
+            rewardToken.mint(msg.sender, rewards),
+            "SPNFT: reward mint failed"
+        );
         emit Claimed(tokenId, rewards);
     }
 
@@ -260,8 +292,7 @@ abstract contract AbstractSPNFT is
      * @dev Unstake a token.
      * @param tokenId The token ID to unstake.
      */
-    function unstake(uint256 tokenId) public {
-        require(ownerOf(tokenId) == msg.sender, "SPNFT: not owner");
+    function unstake(uint256 tokenId) public onlyTokenOwner(tokenId) {
         require(stakingInfo[tokenId].stakedAt != 0, "SPNFT: not staked");
 
         // Claim any pending rewards
@@ -285,7 +316,9 @@ abstract contract AbstractSPNFT is
      * @dev Set the staking reward conversion ratio (n rewards = 1 NFT).
      * @param _rewardConversionRatio The new reward conversion ratio.
      */
-    function setRewardConversionRatio(uint256 _rewardConversionRatio) public onlyOwner {
+    function setRewardConversionRatio(
+        uint256 _rewardConversionRatio
+    ) public onlyOwner {
         rewardConversionRatio = _rewardConversionRatio;
     }
 
@@ -303,7 +336,10 @@ abstract contract AbstractSPNFT is
         uint256 batchSize
     ) internal virtual override(ERC721) {
         super._beforeTokenTransfer(from, to, tokenId, batchSize);
-        require(stakingInfo[tokenId].stakedAt == 0, "SPNFT: staked tokens cannot be transferred");
+        require(
+            stakingInfo[tokenId].stakedAt == 0,
+            "SPNFT: staked tokens cannot be transferred"
+        );
     }
 }
 
