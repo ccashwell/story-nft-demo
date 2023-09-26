@@ -279,6 +279,7 @@ abstract contract AbstractSPNFT is
 
         // Update staking info
         stakingInfo[tokenId].stakedAt = block.timestamp;
+        stakingInfo[tokenId].rewards += rewards;
 
         // Mint rewards to the caller
         require(
